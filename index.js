@@ -1,4 +1,4 @@
-import express from "express";
+mport express from "express";
 import cors from "cors";
 import ical from "node-ical";
 import fs from "fs";
@@ -34,56 +34,75 @@ function getPriceForDate(dateStr) {
  return null; // no price found
 }
 
-// ------------------
-//  CHECK DATE ROUTE
-// ------------------
+// --------------------------------------
+// SHARED FUNCTION → checks availability + price
+// --------------------------------------
+async function checkAvailability(date) {
+ // Parse iCal
+ const data = await ical.async.fromURL(ICAL_URL);
+
+ let booked = false;
+
+ for (let event of Object.values(data)) {
+   if (event.type === "VEVENT") {
+     const start = event.start;
+     const end = event.end;
+
+     if (new Date(date) >= start && new Date(date) < end) {
+       booked = true;
+       break;
+     }
+   }
+ }
+
+ const weeklyPrice = getPriceForDate(date);
+
+ if (booked) {
+   return {
+     date,
+     booked: true,
+     price: weeklyPrice,
+     message: `Sorry – that date is booked.`,
+   };
+ }
+
+ return {
+   date,
+   booked: false,
+   price: weeklyPrice,
+   message:
+     weeklyPrice !== null
+       ? `Great news — that week is £${weeklyPrice}. Short stays available on request.`
+       : `That date is available.`,
+ };
+}
+
+// --------------------------------------
+// ROUTE 1 → /check-date  (your original)
+// --------------------------------------
 app.post("/check-date", async (req, res) => {
  try {
    const { date } = req.body;
-   if (!date) {
-     return res.status(400).json({ error: "Missing date" });
-   }
+   if (!date) return res.status(400).json({ error: "Missing date" });
 
-   // Parse iCal
-   const data = await ical.async.fromURL(ICAL_URL);
+   const result = await checkAvailability(date);
+   res.json(result);
+ } catch (err) {
+   console.error("Error:", err);
+   res.status(500).json({ error: "Server error" });
+ }
+});
 
-   let booked = false;
+// --------------------------------------
+// ROUTE 2 → /check  (ALIAS for Typebot)
+// --------------------------------------
+app.post("/check", async (req, res) => {
+ try {
+   const { date } = req.body;
+   if (!date) return res.status(400).json({ error: "Missing date" });
 
-   for (let event of Object.values(data)) {
-     if (event.type === "VEVENT") {
-       const start = event.start;
-       const end = event.end;
-
-       // If the date falls within a booking event
-       if (new Date(date) >= start && new Date(date) < end) {
-         booked = true;
-         break;
-       }
-     }
-   }
-
-   // Get price
-   const weeklyPrice = getPriceForDate(date);
-
-   if (booked) {
-     return res.json({
-       date,
-       booked: true,
-       price: weeklyPrice,
-       message: `Sorry – that date is booked.`,
-     });
-   }
-
-   // Available
-   return res.json({
-     date,
-     booked: false,
-     price: weeklyPrice,
-     message:
-       weeklyPrice !== null
-         ? `Great news — that week is £${weeklyPrice}. Short stays available on request.`
-         : `That date is available.`,
-   });
+   const result = await checkAvailability(date);
+   res.json(result);
  } catch (err) {
    console.error("Error:", err);
    res.status(500).json({ error: "Server error" });
