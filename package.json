@@ -1,0 +1,11 @@
+
+ "name": "tansea-availability",
+ "version": "1.0.0",
+ "main": "index.js",
+ "type": "module",
+ "dependencies": {
+   "express": "^4.18.2",
+   "node-ical": "^0.15.1",
+   "cors": "^2.8.5"
+ }
+} 
