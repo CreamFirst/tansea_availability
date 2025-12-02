@@ -7,89 +7,95 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// -------- Load Pricing --------
+// ---- Load pricing table ----
 const prices = JSON.parse(fs.readFileSync("./prices.json", "utf8"));
 
-// -------- Bookalet ICS URL --------
+// ---- iCal feed URL ----
 const ICAL_URL =
- "https://api.bookalet.co.uk/v1/16295/bookalet-723489/26085.ics";
+"https://api.bookalet.co.uk/v1/16295/bookalet-723489/26085.ics";
 
-// Convert date to numeric timestamp
-function toNum(d) {
- return new Date(d).getTime();
+// Convert date string to comparable number
+function toDateNum(d) {
+return new Date(d).getTime();
 }
 
 // Find weekly price band
 function getPriceForDate(dateStr) {
- const target = toNum(dateStr);
+const target = toDateNum(dateStr);
 
- for (const p of prices) {
-   if (target >= toNum(p.start) && target < toNum(p.end)) {
-     return p.price;
-   }
- }
- return null;
+for (const p of prices) {
+  const start = toDateNum(p.start);
+  const end = toDateNum(p.end);
+
+  if (target >= start && target < end) {
+    return p.price;
+  }
+}
+return null; // no price found
 }
 
-// ---------- Load bookings from ICS ----------
-async function loadBookings() {
- const data = await ical.async.fromURL(ICAL_URL);
- let bookings = [];
+// ------------------
+//  CHECK DATE ROUTE
+// ------------------
+app.post("/check-date", async (req, res) => {
+try {
+  const { date } = req.body;
+  if (!date) {
+    return res.status(400).json({ error: "Missing date" });
+  }
 
- for (let ev of Object.values(data)) {
-   if (ev.type === "VEVENT") {
-     bookings.push({
-       start: ev.start,
-       end: ev.end,
-     });
-   }
- }
+  // Parse iCal
+  const data = await ical.async.fromURL(ICAL_URL);
 
- return bookings;
+  let booked = false;
+
+  for (let event of Object.values(data)) {
+    if (event.type === "VEVENT") {
+      const start = event.start;
+      const end = event.end;
+
+      // If the date falls within a booking event
+      if (new Date(date) >= start && new Date(date) < end) {
+        booked = true;
+        break;
+      }
+    }
+  }
+
+  // Get price
+  const weeklyPrice = getPriceForDate(date);
+
+  if (booked) {
+    return res.json({
+      date,
+      booked: true,
+      price: weeklyPrice,
+      message: `Sorry – that date is booked.`,
+    });
+  }
+
+  // Available
+  return res.json({
+    date,
+    booked: false,
+    price: weeklyPrice,
+    message:
+      weeklyPrice !== null
+        ? `Great news — that week is £${weeklyPrice}. Short stays available on request.`
+        : `That date is available.`,
+  });
+} catch (err) {
+  console.error("Error:", err);
+  res.status(500).json({ error: "Server error" });
 }
-
-// ---------- Check if a date is booked ----------
-function isBooked(date, bookings) {
- const d = new Date(date);
- return bookings.some((b) => d >= b.start && d < b.end);
-}
-
-// ---------- Main Endpoint (simple version) ----------
-app.post("/check", async (req, res) => {
- try {
-   const { date } = req.body;
-
-   if (!date) {
-     return res.status(400).json({ error: "Missing date" });
-   }
-
-   const bookings = await loadBookings();
-   const booked = isBooked(date, bookings);
-   const price = getPriceForDate(date);
-
-   return res.json({
-     date,
-     booked,
-     price,
-     message: booked
-       ? "Sorry — that date is booked."
-       : price
-       ? `Great news — that week is £${price}. Short stays on request.`
-       : "That date is available.",
-   });
- } catch (err) {
-   console.error("ERROR:", err);
-   return res.status(500).json({ error: "Server error" });
- }
 });
 
 // Root route
 app.get("/", (req, res) => {
- res.json({ status: "Tansea availability API (simple mode) running" });
+res.json({ status: "Tansea availability API with pricing is running" });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () =>
- console.log("Tansea Availability API running on port " + PORT)
+console.log("Tansea Availability API running on " + PORT)
 );
-
