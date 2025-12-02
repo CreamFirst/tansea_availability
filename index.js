@@ -14,97 +14,162 @@ const prices = JSON.parse(fs.readFileSync("./prices.json", "utf8"));
 const ICAL_URL =
  "https://api.bookalet.co.uk/v1/16295/bookalet-723489/26085.ics";
 
-// Convert date string to comparable number
-function toDateNum(d) {
+// Convert to numeric timestamp
+function toNum(d) {
  return new Date(d).getTime();
 }
 
-// Find weekly price band
+// Find price band for a date
 function getPriceForDate(dateStr) {
- const target = toDateNum(dateStr);
-
+ const target = toNum(dateStr);
  for (const p of prices) {
-   const start = toDateNum(p.start);
-   const end = toDateNum(p.end);
-
-   if (target >= start && target < end) {
+   if (target >= toNum(p.start) && target < toNum(p.end)) {
      return p.price;
    }
  }
- return null; // no price found
+ return null;
 }
 
-// --------------------------------------
-// SHARED FUNCTION → checks availability + price
-// --------------------------------------
-async function checkAvailability(date) {
- // Parse iCal
+// ------------------------------
+// LOAD & PARSE ICAL BOOKINGS
+// ------------------------------
+async function loadBookings() {
  const data = await ical.async.fromURL(ICAL_URL);
+ let bookings = [];
 
- let booked = false;
-
- for (let event of Object.values(data)) {
-   if (event.type === "VEVENT") {
-     const start = event.start;
-     const end = event.end;
-
-     if (new Date(date) >= start && new Date(date) < end) {
-       booked = true;
-       break;
-     }
+ for (let ev of Object.values(data)) {
+   if (ev.type === "VEVENT") {
+     bookings.push({
+       start: ev.start,
+       end: ev.end,
+     });
    }
  }
 
- const weeklyPrice = getPriceForDate(date);
-
- if (booked) {
-   return {
-     date,
-     booked: true,
-     price: weeklyPrice,
-     message: `Sorry – that date is booked.`,
-   };
- }
-
- return {
-   date,
-   booked: false,
-   price: weeklyPrice,
-   message:
-     weeklyPrice !== null
-       ? `Great news — that week is £${weeklyPrice}. Short stays available on request.`
-       : `That date is available.`,
- };
+ return bookings;
 }
 
-// --------------------------------------
-// ROUTE 1 → /check-date  (your original)
-// --------------------------------------
-app.post("/check-date", async (req, res) => {
- try {
-   const { date } = req.body;
-   if (!date) return res.status(400).json({ error: "Missing date" });
+// Check if a date is booked
+function isBooked(date, bookings) {
+ const d = new Date(date);
+ return bookings.some((b) => d >= b.start && d < b.end);
+}
 
-   const result = await checkAvailability(date);
-   res.json(result);
- } catch (err) {
-   console.error("Error:", err);
-   res.status(500).json({ error: "Server error" });
+// Check if *any* date in a range is booked
+function rangeBooked(start, end, bookings) {
+ let cur = new Date(start);
+ const stop = new Date(end);
+
+ while (cur < stop) {
+   if (isBooked(cur, bookings)) return true;
+   cur.setDate(cur.getDate() + 1);
  }
-});
 
-// --------------------------------------
-// ROUTE 2 → /check  (ALIAS for Typebot)
-// --------------------------------------
+ return false;
+}
+
+// ------------------------------
+// MAIN /check ENDPOINT
+// ------------------------------
 app.post("/check", async (req, res) => {
  try {
-   const { date } = req.body;
-   if (!date) return res.status(400).json({ error: "Missing date" });
+   let { date, start_date, end_date, vague } = req.body;
 
-   const result = await checkAvailability(date);
-   res.json(result);
+   const bookings = await loadBookings();
+
+   // -----------------------------
+   // CASE 1: EXACT DATE
+   // -----------------------------
+   if (date) {
+     const booked = isBooked(date, bookings);
+     const price = getPriceForDate(date);
+
+     return res.json({
+       mode: "exact-date",
+       date,
+       booked,
+       price,
+       message: booked
+         ? "Sorry — that date is booked."
+         : price
+         ? `Great news — that week is £${price}. Short stays on request.`
+         : "That date is available.",
+     });
+   }
+
+   // -----------------------------
+   // CASE 2: EXACT RANGE
+   // -----------------------------
+   if (start_date && end_date && vague === false) {
+     const booked = rangeBooked(start_date, end_date, bookings);
+     const price = getPriceForDate(start_date);
+
+     return res.json({
+       mode: "exact-range",
+       start_date,
+       end_date,
+       booked,
+       price,
+       message: booked
+         ? "Sorry — that range includes booked dates."
+         : price
+         ? `Great news — that stay is around £${price}.`
+         : "That range appears available.",
+     });
+   }
+
+   // -----------------------------
+   // CASE 3: VAGUE REQUEST
+   // Example: “July”, “summer”, “next month”
+   // Typebot gives approx start & end
+   // -----------------------------
+   if (start_date && end_date && vague === true) {
+     const start = new Date(start_date);
+     const end = new Date(end_date);
+
+     let availableWeeks = [];
+     let cur = new Date(start);
+
+     while (cur < end) {
+       let weekStart = new Date(cur);
+       let weekEnd = new Date(cur);
+       weekEnd.setDate(weekEnd.getDate() + 7);
+
+       // Check week
+       if (!rangeBooked(weekStart, weekEnd, bookings)) {
+         const iso = weekStart.toISOString().slice(0, 10);
+         const price = getPriceForDate(iso);
+
+         availableWeeks.push({
+           start: iso,
+           price,
+         });
+       }
+
+       // Move to next week
+       cur.setDate(cur.getDate() + 7);
+     }
+
+     return res.json({
+       mode: "vague",
+       start_date,
+       end_date,
+       availableWeeks,
+       message:
+         availableWeeks.length > 0
+           ? "Here are the available Sat–Sat weeks for that period."
+           : "Sorry — that period is fully booked or unclear.",
+     });
+   }
+
+   // -----------------------------
+   // If nothing matched
+   // -----------------------------
+   return res.status(400).json({
+     error: "Invalid request. Provide either date OR start_date + end_date.",
+   });
  } catch (err) {
-   console.error("Error:", err);
+   console.error("ERROR:", err);
    res.status(500).json({ error: "Server error" });
  }
 });
@@ -118,3 +183,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () =>
  console.log("Tansea Availability API running on " + PORT)
 );
+
