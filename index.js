@@ -75,10 +75,15 @@ app.post("/check", async (req, res) => {
  try {
    let { date, start_date, end_date, vague } = req.body;
 
+   // ⭐ NORMALISE INPUT FROM TYPEBOT (CRITICAL FIX)
+   if (start_date === "") start_date = null;
+   if (end_date === "") end_date = null;
+   vague = vague === true || vague === "true";
+
    const bookings = await loadBookings();
 
    // -----------------------------
-   // CASE 1: EXACT DATE
+   // CASE 1: EXACT SINGLE DATE
    // -----------------------------
    if (date) {
      const booked = isBooked(date, bookings);
@@ -98,7 +103,7 @@ app.post("/check", async (req, res) => {
    }
 
    // -----------------------------
-   // CASE 2: EXACT RANGE
+   // CASE 2: EXACT RANGE (NOT VAGUE)
    // -----------------------------
    if (start_date && end_date && vague === false) {
      const booked = rangeBooked(start_date, end_date, bookings);
@@ -120,8 +125,6 @@ app.post("/check", async (req, res) => {
 
    // -----------------------------
    // CASE 3: VAGUE REQUEST
-   // Example: “July”, “summer”, “next month”
-   // Typebot gives approx start & end
    // -----------------------------
    if (start_date && end_date && vague === true) {
      const start = new Date(start_date);
@@ -135,7 +138,6 @@ app.post("/check", async (req, res) => {
        let weekEnd = new Date(cur);
        weekEnd.setDate(weekEnd.getDate() + 7);
 
-       // Check week
        if (!rangeBooked(weekStart, weekEnd, bookings)) {
          const iso = weekStart.toISOString().slice(0, 10);
          const price = getPriceForDate(iso);
@@ -146,7 +148,6 @@ app.post("/check", async (req, res) => {
          });
        }
 
-       // Move to next week
        cur.setDate(cur.getDate() + 7);
      }
 
@@ -163,7 +164,7 @@ app.post("/check", async (req, res) => {
    }
 
    // -----------------------------
-   // If nothing matched
+   // FALLBACK → INVALID REQUEST
    // -----------------------------
    return res.status(400).json({
      error: "Invalid request. Provide either date OR start_date + end_date.",
