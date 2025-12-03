@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import ical from "node-ical";
 import fs from "fs";
-import chrono from "chrono-node";
+import * as chrono from "chrono-node";
 
 const app = express();
 app.use(cors());
