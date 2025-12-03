@@ -337,13 +337,11 @@ app.post("/check", async (req, res) => {
      if (includesChosen) {
        message =
          `Good news — the Sat–Sat stay from ${niceStart} to ${niceEnd} is ${priceText}. ` +
-         `Short stays are available on request. ` +
-         `When the calendar opens, tap **${niceStart}** as your arrival date.`; // ← added
+         `Short stays are available on request. `
      } else {
        message =
          `That exact week looks busy, but the next available Sat–Sat stay is ${niceStart} to ${niceEnd} at ${priceText}. ` +
-         `Short stays are available on request. ` +
-         `When the calendar opens, tap **${niceStart}** as your arrival date.`; // ← added
+         `Short stays are available on request. ` 
      }
 
      return res.json({
@@ -381,8 +379,7 @@ app.post("/check", async (req, res) => {
            altWeek: alt,
            message:
              `That range includes booked dates. The next available Sat–Sat week is ${altStartNice} to ${altEndNice} at ${priceText}. ` +
-             `Short stays are available on request. ` +
-             `When the calendar opens, tap **${altStartNice}** as your arrival date.`, // ← added
+             `Short stays are available on request. `
          });
        }
 
@@ -408,8 +405,7 @@ app.post("/check", async (req, res) => {
        snappedWeek: weekInfo,
        message:
          `Good news — the Sat–Sat stay from ${niceStart} to ${niceEnd} is ${priceText}. ` +
-         `Short stays are available on request. ` +
-         `When the calendar opens, tap **${niceStart}** as your arrival date.`, // ← added
+         `Short stays are available on request. ` 
      });
    }
 
@@ -456,8 +452,7 @@ app.post("/check", async (req, res) => {
          `Good news — there are Sat–Sat weeks available in that period. ` +
          `For example, ${firstStartNice} to ${firstEndNice} at ${priceText}. ` +
          `A few options include: ${summaryList}. ` +
-         `Short stays are often possible on request. ` +
-         `When the calendar opens, tap **${firstStartNice}** as your arrival date.`, // ← added
+         `Short stays are often possible on request. ` 
      });
    }
 
