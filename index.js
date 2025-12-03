@@ -338,7 +338,7 @@ app.post("/check", async (req, res) => {
        message =
          `Good news — the Sat–Sat stay from ${niceStart} to ${niceEnd} is ${priceText}. ` +
          `Short stays are available on request. ` +
-         `To book, open the calendar and select ${niceStart} as your arrival date here: \n\n'
+         `To book, open the calendar and select ${niceStart} as your arrival date here: \n\n' +
          `https://tanseahopecove.co.uk/availability-prices/ ` 
      } else {
        message =
