@@ -2,43 +2,56 @@ import express from "express";
 import cors from "cors";
 import ical from "node-ical";
 import fs from "fs";
+import chrono from "chrono-node";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ---- Load pricing table ----
-const prices = JSON.parse(fs.readFileSync("./prices.json", "utf8"));
+// ---------------------------
+// CONFIG
+// ---------------------------
 
-// ---- iCal feed URL ----
+// iCal feed from Bookalet
 const ICAL_URL =
  "https://api.bookalet.co.uk/v1/16295/bookalet-723489/26085.ics";
 
-// ---------- helpers ----------
-function toNum(d) {
+// Weekly pricing table (Sat–Sat) – you already have this file
+const prices = JSON.parse(fs.readFileSync("./prices.json", "utf8"));
+
+// ---------------------------
+// HELPER FUNCTIONS
+// ---------------------------
+
+function toTime(d) {
  return new Date(d).getTime();
 }
 
-function toISO(d) {
- const dd = new Date(d);
- const y = dd.getFullYear();
- const m = String(dd.getMonth() + 1).padStart(2, "0");
- const day = String(dd.getDate()).padStart(2, "0");
- return `${y}-${m}-${day}`;
+function iso(d) {
+ return new Date(d).toISOString().slice(0, 10);
 }
 
-// price band for any date inside that band
+// Find price band for a given date (uses your Sat–Sat bands)
 function getPriceForDate(dateStr) {
- const target = toNum(dateStr);
+ const t = toTime(dateStr);
  for (const p of prices) {
-   if (target >= toNum(p.start) && target < toNum(p.end)) {
+   if (t >= toTime(p.start) && t < toTime(p.end)) {
      return p.price;
    }
  }
  return null;
 }
 
-// load bookings from iCal
+// Snap any date to the **Saturday** of its week (UK style, Sat = 6)
+function snapToSaturday(dateStr) {
+ const d = new Date(dateStr);
+ const day = d.getDay(); // 0=Sun, 6=Sat
+ const diff = (day + 1) % 7; // distance from Sat going backwards
+ d.setDate(d.getDate() - diff);
+ return iso(d);
+}
+
+// Load bookings from iCal (each event = a booked block)
 async function loadBookings() {
  const data = await ical.async.fromURL(ICAL_URL);
  const bookings = [];
@@ -54,266 +67,320 @@ async function loadBookings() {
  return bookings;
 }
 
-function isBookedDate(date, bookings) {
- const d = new Date(date);
+// Is a **single date** inside any booking?
+function isBookedDate(dateStr, bookings) {
+ const d = new Date(dateStr);
  return bookings.some((b) => d >= b.start && d < b.end);
 }
 
-function rangeBooked(start, end, bookings) {
- let cur = new Date(start);
- const stop = new Date(end);
+// Is **any day in [start, end)** booked?
+function isBookedRange(startStr, endStr, bookings) {
+ let cur = new Date(startStr);
+ const end = new Date(endStr);
 
- while (cur < stop) {
-   if (isBookedDate(cur, bookings)) return true;
+ while (cur < end) {
+   if (isBookedDate(cur.toISOString(), bookings)) return true;
    cur.setDate(cur.getDate() + 1);
  }
  return false;
 }
 
-function getNextSaturday(fromDate = new Date()) {
- const d = new Date(fromDate);
- while (d.getDay() !== 6) {
-   d.setDate(d.getDate() + 1);
- }
- return d;
+// Given a Saturday, return the Sat–Sat week info
+function getWeekInfo(satStr, bookings) {
+ const start = new Date(satStr);
+ const end = new Date(satStr);
+ end.setDate(end.getDate() + 7);
+
+ const booked = isBookedRange(iso(start), iso(end), bookings);
+ const price = getPriceForDate(iso(start));
+
+ return {
+   start: iso(start),
+   end: iso(end),
+   booked,
+   price,
+ };
 }
 
-// --------- query parser (natural language → mode) ---------
+// Find the **first available** Sat–Sat week on/after a given date
+function findNextAvailableWeek(dateStr, bookings, maxWeeksLookahead = 8) {
+ let sat = snapToSaturday(dateStr);
+ let d = new Date(sat);
 
-const MONTHS = [
- "january","february","march","april","may","june",
- "july","august","september","october","november","december"
-];
-
-function bestYearForMonth(monthIdx, now = new Date()) {
- const thisYear = now.getFullYear();
- if (monthIdx > now.getMonth()) return thisYear;
- return thisYear + 1;
+ for (let i = 0; i < maxWeeksLookahead; i++) {
+   const info = getWeekInfo(iso(d), bookings);
+   if (!info.booked && info.price !== null) return info;
+   d.setDate(d.getDate() + 7);
+ }
+ return null;
 }
 
-function parseQuery(query) {
- const raw = query || "";
- const text = raw.toLowerCase().trim();
- const now = new Date();
+// For vague queries like "anything in July 2026":
+// find ALL available Sat–Sat weeks in that window
+function findAvailableWeeksBetween(startStr, endStr, bookings) {
+ const weeks = [];
+ let d = new Date(startStr);
 
- // 1) "next week" / "this week"
- if (text.includes("next week")) {
-   const start = getNextSaturday(now);
-   const end = new Date(start);
-   end.setDate(end.getDate() + 7);
-   return { mode: "week", startISO: toISO(start), endISO: toISO(end) };
- }
- if (text.includes("this week")) {
-   const start = getNextSaturday(now); // treat "this week" as upcoming Sat–Sat
-   const end = new Date(start);
-   end.setDate(end.getDate() + 7);
-   return { mode: "week", startISO: toISO(start), endISO: toISO(end) };
- }
+ // Snap first week to Saturday
+ d = new Date(snapToSaturday(iso(d)));
 
- // 2) explicit day–day in a month: "10-17 july", "10 to 17 aug 2026"
- for (let i = 0; i < MONTHS.length; i++) {
-   const name = MONTHS[i];
-   if (text.includes(name)) {
-     const yearMatch = text.match(/(\d{4})/);
-     const year = yearMatch
-       ? parseInt(yearMatch[1], 10)
-       : bestYearForMonth(i, now);
+ const end = new Date(endStr);
 
-     // day range
-     const rangeMatch = text.match(/(\d{1,2})\D+(\d{1,2})/);
-     if (rangeMatch) {
-       let d1 = parseInt(rangeMatch[1], 10);
-       let d2 = parseInt(rangeMatch[2], 10);
-       if (d2 < d1) [d1, d2] = [d2, d1];
-
-       const startISO = toISO(new Date(year, i, d1));
-       const endISO = toISO(new Date(year, i, d2));
-       return { mode: "range", startISO, endISO };
-     }
-
-     // no explicit days → vague month ("anything in July")
-     const startISO = toISO(new Date(year, i, 1));
-     const endTmp = new Date(year, i + 1, 0); // last day of month
-     const endISO = toISO(endTmp);
-     return { mode: "month", startISO, endISO };
+ while (d < end) {
+   const info = getWeekInfo(iso(d), bookings);
+   if (!info.booked && info.price !== null) {
+     weeks.push(info);
    }
+   d.setDate(d.getDate() + 7);
  }
-
- // 3) "next month" / "this month"
- if (text.includes("next month")) {
-   const m = now.getMonth() + 1;
-   const y = m > 11 ? now.getFullYear() + 1 : now.getFullYear();
-   const realMonth = m > 11 ? 0 : m;
-   const startISO = toISO(new Date(y, realMonth, 1));
-   const endISO = toISO(new Date(y, realMonth + 1, 0));
-   return { mode: "month", startISO, endISO };
- }
- if (text.includes("this month")) {
-   const y = now.getFullYear();
-   const m = now.getMonth();
-   const startISO = toISO(new Date(y, m, 1));
-   const endISO = toISO(new Date(y, m + 1, 0));
-   return { mode: "month", startISO, endISO };
- }
-
- // 4) fall back → try exact date
- const d = new Date(raw);
- if (!isNaN(d)) {
-   return { mode: "single", dateISO: toISO(d) };
- }
-
- // unknown
- return { mode: "unknown" };
+ return weeks;
 }
 
-// --------- main /check endpoint ----------
+// ---------------------------
+// QUERY INTERPRETATION
+// ---------------------------
 
+/**
+* Interpret the natural language query into one of:
+* - { kind: "single", date }
+* - { kind: "range", start, end }
+* - { kind: "vagueRange", start, end, label }
+*/
+function interpretQuery(query) {
+ if (!query || typeof query !== "string") {
+   return { kind: "invalid" };
+ }
+
+ const trimmed = query.trim();
+
+ // Use chrono to parse natural language
+ const results = chrono.parse(trimmed, new Date(), { forwardDate: true });
+
+ if (results.length === 0) {
+   return { kind: "invalid" };
+ }
+
+ const r = results[0];
+
+ // Explicit range "10–17 Jan", "28 Jan to 5 Feb"
+ if (r.end) {
+   const start = iso(r.start.date());
+   const end = iso(r.end.date());
+   return { kind: "range", start, end };
+ }
+
+ // Single date, but maybe "anything in July 2026" etc.
+ const single = iso(r.start.date());
+
+ const lower = trimmed.toLowerCase();
+
+ const mentionsMonthOnly =
+   /(anything|any|sometime|somewhere|in)\s+[a-z]+/.test(lower) ||
+   /throughout|all month/.test(lower);
+
+ const mentionsWeek =
+   /next week|that week|for a week|week in/.test(lower);
+
+ if (mentionsMonthOnly) {
+   // Treat as vague **month** range
+   const baseDate = r.start.date();
+   const monthStart = new Date(baseDate.getFullYear(), baseDate.getMonth(), 1);
+   const monthEnd = new Date(
+     baseDate.getFullYear(),
+     baseDate.getMonth() + 1,
+     1
+   );
+   return {
+     kind: "vagueRange",
+     start: iso(monthStart),
+     end: iso(monthEnd),
+     label: "month",
+   };
+ }
+
+ if (mentionsWeek) {
+   // Treat as vague **week** range
+   const baseDate = r.start.date();
+   const weekStart = new Date(baseDate);
+   const weekEnd = new Date(baseDate);
+   weekEnd.setDate(weekEnd.getDate() + 7);
+   return {
+     kind: "vagueRange",
+     start: iso(weekStart),
+     end: iso(weekEnd),
+     label: "week",
+   };
+ }
+
+ // Plain single date (“4 Feb 2026”)
+ return { kind: "single", date: single };
+}
+
+// ---------------------------
+// MAIN /check ENDPOINT
+// ---------------------------
+
+/**
+* Body formats supported:
+* 1) { "query": "28 Jan 2026", ... }  ← Typebot style
+* 2) { "date": "2026-01-28" }         ← legacy
+*/
 app.post("/check", async (req, res) => {
  try {
-   const { query } = req.body || {};
-   if (!query) {
-     return res.status(400).json({ error: "Missing 'query' in body" });
+   const { query, date } = req.body;
+   const userText = query || date;
+
+   if (!userText) {
+     return res
+       .status(400)
+       .json({ error: "Missing 'query' or 'date' in body" });
    }
 
-   const parsed = parseQuery(query);
+   const interpretation = interpretQuery(userText);
+   if (interpretation.kind === "invalid") {
+     return res.json({
+       mode: "invalid",
+       message:
+         "Sorry – I couldn’t quite read those dates. Try something like “10–17 July 2026”.",
+     });
+   }
+
    const bookings = await loadBookings();
 
-   // SINGLE DATE
-   if (parsed.mode === "single") {
-     const dateISO = parsed.dateISO;
-     const booked = isBookedDate(dateISO, bookings);
-     const price = getPriceForDate(dateISO);
+   // -----------------------
+   // SINGLE DATE MODE
+   // -----------------------
+   if (interpretation.kind === "single") {
+     const chosen = interpretation.date;
+     const targetWeek = findNextAvailableWeek(chosen, bookings);
 
-     return res.json({
-       mode: "single",
-       date: dateISO,
-       booked,
-       price,
-       message: booked
-         ? `Sorry – ${dateISO} sits inside a booked week.`
-         : price
-         ? `Good news – that week is around £${price}. Short stays on request.`
-         : `That date looks available. Short stays on request.`,
-     });
-   }
-
-   // EXACT RANGE (user typed 10–17 July)
-   if (parsed.mode === "range") {
-     const { startISO, endISO } = parsed;
-     const booked = rangeBooked(startISO, endISO, bookings);
-     const price = getPriceForDate(startISO);
-
-     return res.json({
-       mode: "range",
-       start_date: startISO,
-       end_date: endISO,
-       booked,
-       price,
-       message: booked
-         ? "Sorry – that range includes booked nights."
-         : price
-         ? `Great news – that stay is around £${price}.`
-         : "That range appears available.",
-     });
-   }
-
-   // WEEK: show just that Sat–Sat
-   if (parsed.mode === "week") {
-     const { startISO, endISO } = parsed;
-     const booked = rangeBooked(startISO, endISO, bookings);
-     const price = getPriceForDate(startISO);
-
-     return res.json({
-       mode: "week",
-       start_date: startISO,
-       end_date: endISO,
-       booked,
-       price,
-       message: booked
-         ? "Sorry – that week is booked."
-         : price
-         ? `That Sat–Sat week is available at about £${price}.`
-         : "That Sat–Sat week looks available.",
-     });
-   }
-
-   // MONTH / VAGUE PERIOD → list available Sat–Sat weeks
-   if (parsed.mode === "month") {
-     const { startISO, endISO } = parsed;
-     const start = new Date(startISO);
-     const end = new Date(endISO);
-
-     let cur = new Date(start);
-     // move to first Saturday on/after start
-     while (cur.getDay() !== 6) {
-       cur.setDate(cur.getDate() + 1);
-     }
-
-     const availableWeeks = [];
-     while (cur <= end) {
-       const weekStart = new Date(cur);
-       const weekEnd = new Date(cur);
-       weekEnd.setDate(weekEnd.getDate() + 7);
-
-       if (!rangeBooked(weekStart, weekEnd, bookings)) {
-         const iso = toISO(weekStart);
-         availableWeeks.push({
-           start: iso,
-           price: getPriceForDate(iso),
-         });
-       }
-
-       cur.setDate(cur.getDate() + 7);
-     }
-
-     if (availableWeeks.length === 0) {
+     if (!targetWeek) {
        return res.json({
-         mode: "month",
-         start_date: startISO,
-         end_date: endISO,
-         availableWeeks,
+         mode: "single",
+         query: userText,
          message:
-           "That period looks fully booked, or there are no clear Sat–Sat weeks left.",
+           "I’ve checked the calendar and couldn’t find an available Sat–Sat week around those dates.",
        });
      }
 
-     // build a human message
-     const lines = availableWeeks.slice(0, 8).map((w) => {
-       const s = new Date(w.start);
-       const e = new Date(s);
-       e.setDate(e.getDate() + 7);
+     const snapped = snapToSaturday(chosen);
+     const includesChosen =
+       targetWeek.start === snapped && !targetWeek.booked;
 
-       const fmt = (d) =>
-         d.toLocaleDateString("en-GB", {
-           day: "2-digit",
-           month: "short",
-         });
+     const priceText =
+       targetWeek.price !== null
+         ? `around £${targetWeek.price}`
+         : "available";
 
-       const priceText = w.price ? ` — £${w.price}` : "";
-       return `• ${fmt(s)} to ${fmt(e)}${priceText}`;
-     });
+     let message;
+
+     if (includesChosen) {
+       message = `Good news — the Sat–Sat week from ${targetWeek.start} to ${targetWeek.end} is ${priceText}. Short stays are available on request.`;
+     } else {
+       message = `That exact week looks busy, but the next available Sat–Sat stay is ${targetWeek.start} to ${targetWeek.end} at around £${targetWeek.price}. Short stays available on request.`;
+     }
 
      return res.json({
-       mode: "month",
-       start_date: startISO,
-       end_date: endISO,
-       availableWeeks,
-       message:
-         "Here are the available Sat–Sat weeks in that period:\n" +
-         lines.join("\n") +
-         "\n\nYou can book any of these directly on the Tansea site.",
+       mode: "single",
+       query: userText,
+       snappedWeek: targetWeek,
+       message,
      });
    }
 
-   // UNKNOWN
-   return res.json({
-     mode: "unknown",
-     message:
-       "Sorry, I couldn't understand those dates. Try something like:\n" +
-       "• '12 July 2026'\n" +
-       "• '10–17 August 2026'\n" +
-       "• 'anything in July 2026'\n" +
-       "• 'next week'",
+   // -----------------------
+   // EXACT RANGE MODE
+   // -----------------------
+   if (interpretation.kind === "range") {
+     const { start, end } = interpretation;
+     const snappedStart = snapToSaturday(start);
+     const weekInfo = getWeekInfo(snappedStart, bookings);
+
+     if (weekInfo.booked) {
+       const alt = findNextAvailableWeek(start, bookings);
+       if (alt) {
+         const priceText =
+           alt.price !== null ? `around £${alt.price}` : "available";
+         return res.json({
+           mode: "range",
+           query: userText,
+           requestedRange: { start, end },
+           snappedWeek: weekInfo,
+           altWeek: alt,
+           message: `That range includes booked dates. The next available Sat–Sat week is ${alt.start} to ${alt.end} at ${priceText}.`,
+         });
+       }
+
+       return res.json({
+         mode: "range",
+         query: userText,
+         requestedRange: { start, end },
+         snappedWeek: weekInfo,
+         message:
+           "That range includes booked dates and I couldn’t find a nearby free Sat–Sat week.",
+       });
+     }
+
+     const priceText =
+       weekInfo.price !== null
+         ? `around £${weekInfo.price}`
+         : "available";
+
+     return res.json({
+       mode: "range",
+       query: userText,
+       requestedRange: { start, end },
+       snappedWeek: weekInfo,
+       message: `Great news — the Sat–Sat week from ${weekInfo.start} to ${weekInfo.end} is ${priceText}. Short stays available on request.`,
+     });
+   }
+
+   // -----------------------
+   // VAGUE RANGE MODE
+   // (e.g. "anything in July 2026?")
+   // -----------------------
+   if (interpretation.kind === "vagueRange") {
+     const { start, end } = interpretation;
+     const weeks = findAvailableWeeksBetween(start, end, bookings);
+
+     if (weeks.length === 0) {
+       return res.json({
+         mode: "vagueRange",
+         query: userText,
+         range: { start, end },
+         availableWeeks: [],
+         message:
+           "I’ve checked that period and it looks fully booked or unclear. Try a different month or specific dates.",
+       });
+     }
+
+     const first = weeks[0];
+     const priceText =
+       first.price !== null ? `around £${first.price}` : "available";
+
+     // Short, human-friendly summary
+     const summaryList = weeks
+       .slice(0, 3)
+       .map(
+         (w) =>
+           `${w.start}–${w.end}${
+             w.price ? ` (£${w.price})` : ""
+           }`
+       )
+       .join("; ");
+
+     return res.json({
+       mode: "vagueRange",
+       query: userText,
+       range: { start, end },
+       availableWeeks: weeks,
+       message: `Here are available Sat–Sat weeks in that period. For example: ${summaryList}. Short stays are often possible on request.`,
+     });
+   }
+
+   // Fallback – should never hit
+   return res.status(400).json({
+     error: "Could not interpret request.",
    });
  } catch (err) {
    console.error("ERROR /check:", err);
@@ -321,13 +388,14 @@ app.post("/check", async (req, res) => {
  }
 });
 
-// Root route
+// Legacy root route
 app.get("/", (req, res) => {
- res.json({ status: "Tansea availability API with pricing is running" });
+ res.json({ status: "Tansea Smart Availability API v2 is running" });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () =>
  console.log("Tansea Availability API running on " + PORT)
 );
+
 
