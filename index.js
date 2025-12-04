@@ -298,7 +298,7 @@ app.post("/check", async (req, res) => {
      return res.json({
        mode: "invalid",
        message:
-         "Sorry – I couldn’t quite read those dates. Try something like “10–17 July 2026”, or tap “Speak to a Real Person”.",
+         "Sorry – I couldn’t quite read those dates. Try something like “10–17 July 2026”, Tap “Speak to a Real Person” or browse the calendar below.",
      });
    }
 
@@ -316,7 +316,7 @@ app.post("/check", async (req, res) => {
          mode: "single",
          query: userText,
          message:
-           "I’ve checked the calendar and couldn’t find an available Sat–Sat week around those dates. Tap “Speak to a Real Person” and we’ll double-check for you.",
+           "I’ve checked the calendar and couldn’t find an available Sat–Sat week around those dates. Tap “Speak to a Real Person” and we’ll double-check for you or browse the calendar below.",
        });
      }
 
@@ -338,11 +338,12 @@ app.post("/check", async (req, res) => {
        message =
          `Good news — the Sat–Sat stay from ${niceStart} to ${niceEnd} is ${priceText}. ` +
          `Short stays are available on request. \n\n` +
-         `To book, open the calendar and select ${niceStart} as your arrival date here: \n\n`  
+         `To book, just open the calendar and choose ${niceStart} as your arrival date here: \n\n`  
      } else {
        message =
          `That exact week looks busy, but the next available Sat–Sat stay is ${niceStart} to ${niceEnd} at ${priceText}. ` +
-         `Short stays are available on request. ` 
+         `Short stays are available on request. \n\n` +
+         `Feel free to browse the calendar on the link below. \n\n`
      }
 
      return res.json({
@@ -380,7 +381,8 @@ app.post("/check", async (req, res) => {
            altWeek: alt,
            message:
              `That range includes booked dates. The next available Sat–Sat week is ${altStartNice} to ${altEndNice} at ${priceText}. ` +
-             `Short stays are available on request. `
+             `Short stays are available on request. \n\n` +
+             `To book, just open the calendar and choose ${altStartNice} as your arrival date here: \n\n`
          });
        }
 
@@ -390,7 +392,7 @@ app.post("/check", async (req, res) => {
          requestedRange: { start, end },
          snappedWeek: weekInfo,
          message:
-           "That range includes booked dates and I couldn’t find a nearby free Sat–Sat week. Tap “Speak to a Real Person” and we’ll help you look.",
+           "That range includes booked dates and I couldn’t find a nearby free Sat–Sat week. Tap “Speak to a Real Person” and we’ll help you look or browse the calendar below.",
        });
      }
 
@@ -406,7 +408,8 @@ app.post("/check", async (req, res) => {
        snappedWeek: weekInfo,
        message:
          `Good news — the Sat–Sat stay from ${niceStart} to ${niceEnd} is ${priceText}. ` +
-         `Short stays are available on request. ` 
+         `Short stays are available on request. \n\n` +
+         `To book, just open the calendar and choose ${niceStart} as your arrival date here: \n\n`
      });
    }
 
@@ -424,7 +427,7 @@ app.post("/check", async (req, res) => {
          range: { start, end },
          availableWeeks: [],
          message:
-           "I’ve checked that period and couldn’t see any clear Sat–Sat availability. Try another month or tap “Speak to a Real Person” and we’ll check manually.",
+           "I’ve checked that period and couldn’t see any clear Sat–Sat availability. Try another month or tap “Speak to a Real Person” and we’ll check manually or browse the calendar below.",
        });
      }
 
@@ -453,7 +456,8 @@ app.post("/check", async (req, res) => {
          `Good news — there are Sat–Sat weeks available in that period. ` +
          `For example, ${firstStartNice} to ${firstEndNice} at ${priceText}. ` +
          `A few options include: ${summaryList}. ` +
-         `Short stays are often possible on request. ` 
+         `Short stays are often possible on request. \n\n` +
+         `To book, just open the calendar and choose ${firstStartNice} as your arrival date here: \n\n`
      });
    }
 
