@@ -427,7 +427,7 @@ if (interpretation.kind === "vagueRange") {
      range: { start, end },
      availableWeeks: [],
      message:
-       "I’ve checked that period and couldn’t see any clear Sat–Sat availability. Try another month or tap “Speak to a Real Person” and we’ll check manually or browse the calendar below.",
+       `I’ve checked that period and couldn’t see any clear Sat–Sat availability. Try another month or tap “Speak to a Real Person” and we’ll check manually or browse the calendar below. \n\n`
    });
  }
 
@@ -455,9 +455,9 @@ if (interpretation.kind === "vagueRange") {
  if (weeks.length === 1) {
    // ONE WEEK AVAILABLE — clean, no repetition
    message =
-     "Good news — there are Sat–Sat weeks available in that period. " +
+    `Good news — there are Sat–Sat weeks available in that period. ` +
      `${firstStartNice} to ${firstEndNice} is ${priceText}. ` +
-     "Short stays may be possible on request.\n\n" +
+     `Short stays may be possible on request.\n\n` +
      `To book, just open the calendar and choose ${firstStartNice} as your arrival date here: \n\n`;
  } else {
    // MULTIPLE WEEKS — keep example + options list
