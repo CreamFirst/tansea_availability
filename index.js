@@ -435,14 +435,19 @@ app.post("/check", async (req, res) => {
     const priceText =
       first.price !== null ? `around £${first.price}` : "available";
 
-    const summaryList = weeks
-      .slice(0, 3)
-      .map((w) => {
-        const sNice = formatDateUK(w.start);
-        const eNice = formatDateUK(w.end);
-        return `${sNice} → ${eNice}${w.price ? ` (£${w.price})` : ""}`;
-      })
-      .join("; ");
+    // Build summary list but avoid repeating the first week if there is only one week
+let summaryList = "";
+
+if (weeks.length > 1) {
+ summaryList = weeks
+   .slice(1, 3) // start from week #2 to avoid duplicating week #1
+   .map((w) => {
+     const sNice = formatDateUK(w.start);
+     const eNice = formatDateUK(w.end);
+     return `${sNice} → ${eNice}${w.price ? ` (£${w.price})` : ""}`;
+   })
+   .join("; ");
+}
 
     const firstStartNice = formatDateUK(first.start);
     const firstEndNice = formatDateUK(first.end);
