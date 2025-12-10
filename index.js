@@ -413,62 +413,71 @@ app.post("/check", async (req, res) => {
      });
    }
 
-   // -----------------------
-   // VAGUE RANGE
-   // -----------------------
-   if (interpretation.kind === "vagueRange") {
-     const { start, end } = interpretation;
-     const weeks = findAvailableWeeksBetween(start, end, bookings);
+  // -----------------------
+// VAGUE RANGE
+// -----------------------
+if (interpretation.kind === "vagueRange") {
+ const { start, end } = interpretation;
+ const weeks = findAvailableWeeksBetween(start, end, bookings);
 
-     if (weeks.length === 0) {
-       return res.json({
-         mode: "vagueRange",
-         query: userText,
-         range: { start, end },
-         availableWeeks: [],
-         message:
-           "I’ve checked that period and couldn’t see any clear Sat–Sat availability. Try another month or tap “Speak to a Real Person” and we’ll check manually or browse the calendar below.",
-       });
-     }
-     
-     const first = weeks[0];
-     const priceText =
-       first.price !== null ? `around £${first.price}` : "available";
-
-     const summaryList = weeks
-       .slice(0, 3)
-       .map((w) => {
-         const sNice = formatDateUK(w.start);
-         const eNice = formatDateUK(w.end);
-         return `${sNice} → ${eNice}${w.price ? ` (£${w.price})` : ""}`;
-       })
-       .join("; ");
-
-     const firstStartNice = formatDateUK(first.start);
-     const firstEndNice = formatDateUK(first.end);
-
-     return res.json({
-       mode: "vagueRange",
-       query: userText,
-       range: { start, end },
-       availableWeeks: weeks,
-       message:
-         `Good news — there are Sat–Sat weeks available in that period. ` +
-         `For example, ${firstStartNice} to ${firstEndNice} at ${priceText}. ` +
-         `A few options include: ${summaryList}. ` +
-         `Short stays are often possible on request. \n\n` +
-         `To book, just open the calendar and choose ${firstStartNice} as your arrival date here: \n\n`
-     });
-   }
-
-   return res.status(400).json({
-     error: "Could not interpret request.",
+ if (weeks.length === 0) {
+   return res.json({
+     mode: "vagueRange",
+     query: userText,
+     range: { start, end },
+     availableWeeks: [],
+     message:
+       "I’ve checked that period and couldn’t see any clear Sat–Sat availability. Try another month or tap “Speak to a Real Person” and we’ll check manually or browse the calendar below.",
    });
- } catch (err) {
-   console.error("ERROR /check:", err);
-   res.status(500).json({ error: "Server error" });
  }
-});
+
+ const first = weeks[0];
+ const priceText =
+   first.price !== null ? `around £${first.price}` : "available";
+
+ const summaryList = weeks
+   .slice(0, 3)
+   .map((w) => {
+     const sNice = formatDateUK(w.start);
+     const eNice = formatDateUK(w.end);
+     return `${sNice} → ${eNice}${w.price ? ` (£${w.price})` : ""}`;
+   })
+   .join("; ");
+
+ const firstStartNice = formatDateUK(first.start);
+ const firstEndNice = formatDateUK(first.end);
+
+ // ---------------------------
+ // MESSAGE (old format preserved)
+ // ---------------------------
+ let message;
+
+ if (weeks.length === 1) {
+   // ONE WEEK AVAILABLE — clean, no repetition
+   message =
+     "Good news — there are Sat–Sat weeks available in that period. " +
+     `${firstStartNice} to ${firstEndNice} is ${priceText}. ` +
+     "Short stays may be possible on request.\n\n" +
+     `To book, just open the calendar and choose ${firstStartNice} as your arrival date here: \n\n`;
+ } else {
+   // MULTIPLE WEEKS — keep example + options list
+   message =
+     "Good news — there are Sat–Sat weeks available in that period. " +
+     `For example, ${firstStartNice} to ${firstEndNice} at ${priceText}. ` +
+     `A few options include: ${summaryList}. ` +
+     "Short stays are often possible on request.\n\n" +
+     `To book, just open the calendar and choose ${firstStartNice} as your arrival date here: \n\n`;
+ }
+
+ return res.json({
+   mode: "vagueRange",
+   query: userText,
+   range: { start, end },
+   availableWeeks: weeks,
+   message
+ });
+}
+
 
 // ---------------------------
 // ROOT
