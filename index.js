@@ -430,21 +430,7 @@ app.post("/check", async (req, res) => {
            "I’ve checked that period and couldn’t see any clear Sat–Sat availability. Try another month or tap “Speak to a Real Person” and we’ll check manually or browse the calendar below.",
        });
      }
-     if (weeks.length === 1) {
-       return res.json({
-         mode: "vagueRange",
-         query: userText,
-         range: { start, end },
-         availableWeeks: [],
-         message:
-          `Good news — there is a Sat–Sat week available in that period. ` +
-         `${firstStartNice} to ${firstEndNice} at ${priceText}. ` +
-         `Short stays are often possible on request. \n\n` +
-         `To book, just open the calendar and choose ${firstStartNice} as your arrival date here: \n\n`
-     });
-   }
-    
-
+     
      const first = weeks[0];
      const priceText =
        first.price !== null ? `around £${first.price}` : "available";
