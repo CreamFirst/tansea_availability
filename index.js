@@ -460,7 +460,7 @@ if (weeks.length > 1) {
       message:
         `Good news — there are Sat–Sat weeks available in that period. ` +
         `For example, ${firstStartNice} to ${firstEndNice} at ${priceText}. ` +
-       (summaryList ? `A few options include: ${summaryList}. ` : "")
+       (summaryList ? `A few options include: ${summaryList}. ` : "") +
         `Short stays are often possible on request. \n\n` +
         `To book, just open the calendar and choose ${firstStartNice} as your arrival date here: \n\n`
     });
