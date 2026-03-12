@@ -17,6 +17,9 @@ const ICAL_URL =
 
 const prices = JSON.parse(fs.readFileSync("./prices.json", "utf8"));
 
+let cachedBookings = [];
+let lastLoaded = null;
+
 // ---------------------------
 // HELPER FUNCTIONS
 // ---------------------------
@@ -63,18 +66,34 @@ function snapToSaturday(dateStr) {
 }
 
 async function loadBookings() {
- const data = await ical.async.fromURL(ICAL_URL);
- const bookings = [];
+ try {
 
- for (const ev of Object.values(data)) {
-   if (ev.type === "VEVENT") {
-     bookings.push({
-       start: ev.start,
-       end: ev.end,
-     });
+   const data = await ical.async.fromURL(ICAL_URL);
+   const bookings = [];
+
+   for (const ev of Object.values(data)) {
+     if (ev.type === "VEVENT") {
+       bookings.push({
+         start: ev.start,
+         end: ev.end
+       });
+     }
    }
+
+   cachedBookings = bookings;
+   lastLoaded = new Date();
+
+   console.log("Calendar refreshed:", bookings.length, "bookings");
+
+   return bookings;
+
+ } catch (err) {
+
+   console.error("Calendar refresh failed:", err);
+
+   return cachedBookings;
+
  }
- return bookings;
 }
 
 function isBookedDate(dateStr, bookings) {
@@ -302,7 +321,10 @@ app.post("/check", async (req, res) => {
      });
    }
 
-   const bookings = await loadBookings();
+   if (!cachedBookings.length) {
+ await loadBookings();
+}
+const bookings = cachedBookings;
 
    // -----------------------
    // SINGLE DATE MODE
@@ -480,6 +502,10 @@ if (interpretation.kind === "vagueRange") {
 app.get("/", (req, res) => {
  res.json({ status: "Tansea Smart Availability API v2.6 is running" });
 });
+
+// preload calendar
+loadBookings();
+setInterval(loadBookings, 120000);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () =>
