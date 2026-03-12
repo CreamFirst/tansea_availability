@@ -321,7 +321,7 @@ app.post("/check", async (req, res) => {
      return res.json({
        mode: "invalid",
        message:
-         "Sorry – I couldn’t quite read those dates. Try something like “10–17 July 2026”, Tap “Speak to a Real Person” or browse the calendar below.",
+         "Sorry – I couldn’t quite read those dates. Try something like “10–17 July 2026”, Ask to Speak to a Real Person or browse the calendar below.",
      });
    }
 
@@ -342,7 +342,7 @@ const bookings = cachedBookings;
          mode: "single",
          query: userText,
          message:
-           "I’ve checked the calendar and couldn’t find an available Sat–Sat week around those dates. Tap “Speak to a Real Person” and we’ll double-check for you or browse the calendar below.",
+           "I’ve checked the calendar and couldn’t find an available Sat–Sat week around those dates. Ask to Speak to a Real Person and we’ll double-check for you or browse the calendar below.",
        });
      }
 
@@ -368,7 +368,7 @@ const bookings = cachedBookings;
      } else {
        message =
          `That exact week looks busy, but the next available Sat–Sat stay is ${niceStart} to ${niceEnd} at ${priceText}. ` +
-         `Short stays are available on request. \n\n` +
+         `Short stays may be possible depending on availability. \n\n` +
          `Feel free to browse the calendar on the link below. \n\n`
      }
 
@@ -407,7 +407,7 @@ const bookings = cachedBookings;
            altWeek: alt,
            message:
              `That range includes booked dates. The next available Sat–Sat week is ${altStartNice} to ${altEndNice} at ${priceText}. ` +
-             `Short stays are available on request. \n\n` +
+             `Short stays may be possible depending on availability. \n\n` +
              `To book, just open the calendar and choose ${altStartNice} as your arrival date here: \n\n`
          });
        }
@@ -418,7 +418,7 @@ const bookings = cachedBookings;
          requestedRange: { start, end },
          snappedWeek: weekInfo,
          message:
-           "That range includes booked dates and I couldn’t find a nearby free Sat–Sat week. Tap “Speak to a Real Person” and we’ll help you look or browse the calendar below.",
+           "That range includes booked dates and I couldn’t find a nearby free Sat–Sat week. Ask to Speak to a Real Person and we’ll help you look or browse the calendar below.",
        });
      }
 
@@ -434,7 +434,7 @@ const bookings = cachedBookings;
        snappedWeek: weekInfo,
        message:
          `Good news — the Sat–Sat stay from ${niceStart} to ${niceEnd} is ${priceText}. ` +
-         `Short stays are available on request. \n\n` +
+         `Short stays may be possible depending on availability. \n\n` +
          `To book, just open the calendar and choose ${niceStart} as your arrival date here: \n\n`
      });
    }
@@ -453,7 +453,7 @@ if (interpretation.kind === "vagueRange") {
      range: { start, end },
      availableWeeks: [],
      message:
-       "I’ve checked that period and couldn’t see any clear Sat–Sat availability. Try another month or tap 'Speak to a Real Person' and we’ll check manually or browse the calendar below.",
+       "I’ve checked that period and couldn’t see any clear Sat–Sat availability. Try another month or Ask to Speak to a Real Person and we’ll check manually or browse the calendar below.",
    });
  }
 
@@ -485,7 +485,7 @@ if (interpretation.kind === "vagueRange") {
      `Good news — there are Sat–Sat weeks available in that period. ` +
      `For example, ${firstStartNice} to ${firstEndNice} at ${priceText}. ` +
      (summaryList ? `A few options include: ${summaryList}. ` : "") +
-     `Short stays are often possible on request. \n\n` +
+     `Short stays may be possible depending on availability. \n\n` +
      `To book, just open the calendar and choose ${firstStartNice} as your arrival date here: \n\n`
  });
 }
